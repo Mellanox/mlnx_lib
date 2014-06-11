@@ -21,3 +21,8 @@ current content of this repository includes :
 
 	A library that implements controlled MAC learning implementation over 
 	Open Ethernet API.
+
+
+For more information please contact Mellanox support: support@mellanox.com
+or
+Visit Mellanox Community portal: http://community.mellanox.com
