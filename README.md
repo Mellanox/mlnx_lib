@@ -30,6 +30,6 @@ current content of this repository includes :
 #### For more information 
 * please contact Mellanox support: support@mellanox.com
 
-	or
+	OR
 
 * Visit Mellanox community portal: http://community.mellanox.com
