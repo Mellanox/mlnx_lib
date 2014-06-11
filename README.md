@@ -23,6 +23,13 @@ current content of this repository includes :
 	Open Ethernet API.
 
 
-For more information please contact Mellanox support: support@mellanox.com
+
+
+
+
+#### For more information 
+* please contact Mellanox support: support@mellanox.com
+
 or
-Visit Mellanox Community portal: http://community.mellanox.com
+
+* Visit Mellanox community portal: http://community.mellanox.com
