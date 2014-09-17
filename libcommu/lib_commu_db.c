@@ -918,15 +918,24 @@ lib_commu_db_udp_handle_info_delete(handle_t handle)
 {
     int err = 0;
     uint16_t idx = 0;
+    int is_db_locked = 0;
 
     err = find_handle_idx(UDP_HANDLE_DB, INVALID_SERVER_ID, handle, &idx);
     lib_commu_bail_error(err);
+
+    err = pthread_mutex_lock(&lock_handles_db_access);
+    lib_commu_bail_error(err);
+    is_db_locked = 1;
 
     memset(&udp_handle_info[idx], 0, sizeof(udp_handle_info[idx]));
     udp_handle_info[idx].handle = INVALID_HANDLE_ID;
     udp_handle_info[idx].socekt_info.peer_magic = INVALID_MAGIC;
 
 bail:
+    if (is_db_locked) {
+        err = pthread_mutex_unlock(&lock_handles_db_access);
+        lib_commu_return_from_bail(err);
+    }
     return err;
 }
 
@@ -948,8 +957,13 @@ lib_commu_db_tcp_handle_info_delete(handle_t handle)
     int err = 0;
     uint16_t server_id = 0;
     uint16_t idx = 0;
+    int is_db_locked = 0;
     struct handle_info *handle_info_st = NULL;
     enum db_type handle_db_type = ANY_HANLDE_DB;
+
+    err = pthread_mutex_lock(&lock_handles_db_access);
+    lib_commu_bail_error(err);
+    is_db_locked = 1;
 
     /* 1. get handle info */
     err = lib_commu_db_hanlde_info_get(handle, &handle_info_st,
@@ -993,6 +1007,10 @@ lib_commu_db_tcp_handle_info_delete(handle_t handle)
 
 
 bail:
+    if (is_db_locked) {
+        err = pthread_mutex_unlock(&lock_handles_db_access);
+        lib_commu_return_from_bail(err);
+    }
     return err;
 }
 

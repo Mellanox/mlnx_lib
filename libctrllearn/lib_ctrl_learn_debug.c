@@ -25,24 +25,13 @@
  * SOFTWARE.
  */ 
 
-/*
- * Copyright (C) Mellanox Technologies, Ltd. 2001-2013.�� ALL RIGHTS RESERVED.
- *
- * This software product is a proprietary product of Mellanox Technologies, Ltd.
- * (the "Company") and all right, title, and interest in and to the software product,
- * including all associated intellectual property rights, are and shall
- * remain exclusively with the Company.
- *
- * This software product is governed by the End User License Agreement
- * provided with the software product.
- */
 
 #include <complib/sx_log.h>
 #include <complib/cl_qmap.h>
 #include <complib/cl_pool.h>
 #include <stdarg.h>
 #include <stdio.h>
-/*#include "mlag_log.h"*/
+
 #include "lib_ctrl_learn_defs.h"
 #include "lib_ctrl_learn_uc_db.h"
 #include "lib_ctrl_learn_filters.h"
