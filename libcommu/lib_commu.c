@@ -45,6 +45,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <netinet/tcp.h>
 
 #undef  __MODULE__
 #define __MODULE__ LIB_COMMU
@@ -68,7 +69,7 @@ static pthread_mutex_t lock_tcp_session_db_access =
 static int client_connect_exit_event_fd = INVALID_HANDLE_ID;
 static uint32_t client_connect_thread_cnt = 0;
 static enum lib_commu_verbosity_level LOG_VAR_NAME(__MODULE__) =
-        LCOMMU_VERBOSITY_LEVEL_NOTICE;
+    LCOMMU_VERBOSITY_LEVEL_NOTICE;
 
 /************************************************
  *  Local function declarations
@@ -80,23 +81,23 @@ static int pseudo_random_gen_uint32_init(void);
 static int pseudo_random_uint32_get(uint32_t *magic);
 
 static int comm_lib_udp_ll_send(handle_t handle, struct addr_info recipient_st,
-                         uint8_t *buffer, uint32_t *buffer_len);
+                                uint8_t *buffer, uint32_t *buffer_len);
 
 static int comm_lib_udp_ll_recv(handle_t handle, uint8_t *payload,
-                         uint32_t *payload_size,
-                         struct addr_info *addresser_st);
+                                uint32_t *payload_size,
+                                struct addr_info *addresser_st);
 
 static int
 comm_lib_tcp_ll_send_blocking(handle_t handle, uint8_t *buffer,
-                                         uint32_t *buffer_len,
-                                         enum db_type handle_db_type);
+                              uint32_t *buffer_len,
+                              enum db_type handle_db_type);
 
 static int
 comm_lib_tcp_ll_recv_blocking(handle_t handle, uint8_t *buffer,
-                                         uint32_t *buffer_len);
+                              uint32_t *buffer_len);
 
 static int parse_metadata_from_buffer(uint8_t *payload,
-                               struct msg_metadata *pkt_metadata_st);
+                                      struct msg_metadata *pkt_metadata_st);
 
 static int metadata_set(struct msg_metadata *metadata_st, uint8_t version,
                         uint32_t payload_size,
@@ -104,12 +105,12 @@ static int metadata_set(struct msg_metadata *metadata_st, uint8_t version,
 
 static int
 validate_metadata_info(struct msg_metadata *metadata_st,
-                                  uint32_t max_paylod_size,
-                                  struct handle_info *handle_info_st);
+                       uint32_t max_paylod_size,
+                       struct handle_info *handle_info_st);
 
-static void *listener_main_thread(void *args);
+static void * listener_main_thread(void *args);
 
-static void *client_connect_thread(void *args);
+static void * client_connect_thread(void *args);
 
 static int close_socket_wrapper(handle_t handle);
 
@@ -139,8 +140,8 @@ static int set_sock_buffer_size(int sock_fd);
 static int set_sock_priority(int sock_fd);
 
 static int handle_new_non_blocking_client(
-        int client_fd, int def_flags, struct connect_thread_args *thread_args,
-        int *is_sock_sent_client);
+    int client_fd, int def_flags, struct connect_thread_args *thread_args,
+    int *is_sock_sent_client);
 
 static int
 create_client_connect_event_socket(int *fd);
@@ -239,7 +240,7 @@ close_socket_wrapper(handle_t handle)
 {
     int err = 0;
 
-    if(handle == INVALID_HANDLE_ID) {
+    if (handle == INVALID_HANDLE_ID) {
         LCM_LOG(LCOMMU_LOG_ERROR, "Invalid socket[%d]", handle);
         lib_commu_bail_force(EINVAL);
     }
@@ -290,7 +291,7 @@ comm_lib_udp_ll_send(handle_t handle, struct addr_info recipient_st,
 bail:
     if (nb_sent > 0) {
         err_bail = handle_total_tx_update(handle, &handle_db_type, nb_sent);
-        if(err_bail) {
+        if (err_bail) {
             LCM_LOG(LCOMMU_LOG_ERROR,
                     "Failed in to update tx[%d] on handle[%d]\n", nb_sent,
                     handle);
@@ -334,9 +335,11 @@ comm_lib_udp_ll_recv(handle_t handle, uint8_t *payload,
 
 bail:
     if (nb_recvd > 0) {
-        err_bail = handle_total_rx_update(handle, &handle_db_type ,nb_recvd);
-        if(err_bail) {
-            LCM_LOG(LCOMMU_LOG_ERROR, "Failed in to update rx[%d] on handle[%d]\n", nb_recvd, handle);
+        err_bail = handle_total_rx_update(handle, &handle_db_type, nb_recvd);
+        if (err_bail) {
+            LCM_LOG(LCOMMU_LOG_ERROR,
+                    "Failed in to update rx[%d] on handle[%d]\n", nb_recvd,
+                    handle);
             if (err == 0) {
                 lib_commu_return_from_bail(err_bail);
             }
@@ -348,8 +351,8 @@ bail:
 
 static int
 comm_lib_tcp_ll_send_blocking(handle_t handle, uint8_t *buffer,
-                                         uint32_t *buffer_len,
-                                         enum db_type handle_db_type)
+                              uint32_t *buffer_len,
+                              enum db_type handle_db_type)
 {
     int err = 0, err_bail = 0;
     uint32_t total_bytes = 0; /* how many bytes we've sent */
@@ -385,8 +388,10 @@ bail:
     if (total_bytes > 0) {
         err_bail =
             handle_total_tx_update(handle, &handle_db_type, total_bytes);
-        if(err_bail) {
-            LCM_LOG(LCOMMU_LOG_ERROR, "Failed in to update tx[%d] on handle[%d]\n", total_bytes, handle);
+        if (err_bail) {
+            LCM_LOG(LCOMMU_LOG_ERROR,
+                    "Failed in to update tx[%d] on handle[%d]\n", total_bytes,
+                    handle);
             if (err == 0) {
                 lib_commu_return_from_bail(err_bail);
             }
@@ -398,7 +403,7 @@ bail:
 
 static int
 comm_lib_tcp_ll_recv_blocking(handle_t handle, uint8_t *buffer,
-                                         uint32_t *buffer_len)
+                              uint32_t *buffer_len)
 {
     int err = 0, err_bail = 0;
     int n_bytes = 0;
@@ -421,8 +426,9 @@ comm_lib_tcp_ll_recv_blocking(handle_t handle, uint8_t *buffer,
             *buffer_len = 0;
             lib_commu_bail_force(ECONNRESET);
         }
-        else if(n_bytes == -1) {
-            LCM_LOG(LCOMMU_LOG_ERROR, "recv() faild with err(%d): %s", errno, strerror(errno));
+        else if (n_bytes == -1) {
+            LCM_LOG(LCOMMU_LOG_ERROR, "recv() faild with err(%d): %s", errno, strerror(
+                        errno));
             *buffer_len = 0;
             lib_commu_bail_force(errno);
         }
@@ -439,8 +445,10 @@ bail:
     if (total_bytes > 0) {
         err_bail =
             handle_total_rx_update(handle, &handle_db_type, total_bytes);
-        if(err_bail) {
-            LCM_LOG(LCOMMU_LOG_ERROR, "Failed in to update rx[%d] on handle[%d]\n", total_bytes, handle);
+        if (err_bail) {
+            LCM_LOG(LCOMMU_LOG_ERROR,
+                    "Failed in to update rx[%d] on handle[%d]\n", total_bytes,
+                    handle);
             if (err == 0) {
                 lib_commu_return_from_bail(err_bail);
             }
@@ -460,9 +468,9 @@ parse_metadata_from_buffer(uint8_t *payload,
     memcpy(pkt_metadata_st, payload, sizeof(*pkt_metadata_st));
 
     LCM_LOG(LCOMMU_LOG_INFO,
-        "metadata info: msg_type[%u], payload_size[%u], peer_magic[%u], version[%u]\n",
-        pkt_metadata_st->msg_type, pkt_metadata_st->payload_size,
-        pkt_metadata_st->trailer, pkt_metadata_st->version);
+            "metadata info: msg_type[%u], payload_size[%u], peer_magic[%u], version[%u]\n",
+            pkt_metadata_st->msg_type, pkt_metadata_st->payload_size,
+            pkt_metadata_st->trailer, pkt_metadata_st->version);
 
 bail:
     return err;
@@ -487,8 +495,8 @@ bail:
 
 static int
 validate_metadata_info(struct msg_metadata *metadata_st,
-                                  uint32_t max_paylod_size,
-                                  struct handle_info *handle_info_st)
+                       uint32_t max_paylod_size,
+                       struct handle_info *handle_info_st)
 {
     int err = 0;
 
@@ -505,8 +513,9 @@ validate_metadata_info(struct msg_metadata *metadata_st,
 
     /* if user payload size <  packet size */
     if ((max_paylod_size < metadata_st->payload_size)
-            || (metadata_st->payload_size == 0)) {
-        LCM_LOG(LCOMMU_LOG_ERROR, "Invalid payload size [%u]\n", metadata_st->payload_size);
+        || (metadata_st->payload_size == 0)) {
+        LCM_LOG(LCOMMU_LOG_ERROR, "Invalid payload size [%u]\n",
+                metadata_st->payload_size);
         lib_commu_bail_force(EOVERFLOW);
     }
 
@@ -573,7 +582,8 @@ set_sock_priority(int sock_fd)
     if (setsockopt(sock_fd, SOL_SOCKET, SO_PRIORITY, &priority,
                    sizeof(priority)) < 0) {
         LCM_LOG(LCOMMU_LOG_ERROR,
-                "Fail setting sock options [SO_PRIORITY], err[%d]: %s\n", errno,
+                "Fail setting sock options [SO_PRIORITY], err[%d]: %s\n",
+                errno,
                 strerror(errno));
         lib_commu_bail_force(errno);
     }
@@ -582,6 +592,56 @@ set_sock_priority(int sock_fd)
                    sizeof(iptos_precedence)) < 0) {
         LCM_LOG(LCOMMU_LOG_ERROR,
                 "Fail setting sock options [IP_TOS], err[%d]: %s\n", errno,
+                strerror(errno));
+        lib_commu_bail_force(errno);
+    }
+
+bail:
+    return err;
+}
+
+static int
+set_sock_ka(int sock_fd)
+{
+    int err = 0;
+    int optval = 1;
+    int keepcnt = 3;
+    int keepidle = 2;
+    int keepintvl = 1;
+
+    if (setsockopt(sock_fd, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt,
+                   sizeof(keepcnt)) < 0) {
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Fail setting sock options [TCP_KEEPCNT], err[%d]: %s\n",
+                errno,
+                strerror(errno));
+        lib_commu_bail_force(errno);
+    }
+
+    if (setsockopt(sock_fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,
+                   sizeof(keepidle)) < 0) {
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Fail setting sock options [TCP_KEEPIDLE], err[%d]: %s\n",
+                errno,
+                strerror(errno));
+        lib_commu_bail_force(errno);
+    }
+
+    if (setsockopt(sock_fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl,
+                   sizeof(keepintvl)) < 0) {
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Fail setting sock options [TCP_KEEPINTVL], err[%d]: %s\n",
+                errno,
+                strerror(errno));
+        lib_commu_bail_force(errno);
+    }
+
+    /* Set SO_KEEPALIVE */
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_KEEPALIVE, &optval,
+                   sizeof(optval)) < 0) {
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Fail setting sock options [SO_KEEPALIVE], err[%d]: %s\n",
+                errno,
                 strerror(errno));
         lib_commu_bail_force(errno);
     }
@@ -610,11 +670,12 @@ listener_main_thread(void* args)
     struct addr_info peer_addr_info;
     struct addr_info local_addr_info;
     int is_sock_sent_client = 0;
+
 /*
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = 100000;
-*/
+ */
 
     memset((char*)&client_addr, 0, sizeof(client_addr));
     memset((char*)&event_addr, 0, sizeof(event_addr));
@@ -634,7 +695,6 @@ listener_main_thread(void* args)
     local_addr_info.ipv4_addr = thread_args->params.port;
 
     if (listen(listener_fd, PENDING_CONNECTIOS_SIZE) < 0) {
-
         LCM_LOG(LCOMMU_LOG_ERROR,
                 "listen() failed on listener socket[%d] failed with err(%d): %s\n",
                 listener_fd, errno, strerror(errno));
@@ -649,16 +709,16 @@ listener_main_thread(void* args)
 
     /* set max fd to select on */
     fd_max = listener_fd > thread_args->event_fd ?
-                    listener_fd : thread_args->event_fd;
+             listener_fd : thread_args->event_fd;
 
-    while(1) {
+    while (1) {
         socklen_t sin_size = sizeof(client_addr);
         FD_ZERO(&read_fds);
         FD_SET(listener_fd, &read_fds);
         FD_SET(thread_args->event_fd, &read_fds);
         is_sock_sent_client = 0;
 
-        if (select(fd_max+1, &read_fds, NULL, NULL, NULL) < 0) {
+        if (select(fd_max + 1, &read_fds, NULL, NULL, NULL) < 0) {
             if (errno != EINTR) { /* if select caught signal --> don't exit with error */
                 LCM_LOG(LCOMMU_LOG_ERROR, "select() failed with err(%d): %s\n",
                         errno, strerror(errno));
@@ -667,9 +727,7 @@ listener_main_thread(void* args)
         }
 
         for (i = 0; i <= fd_max; i++) {
-
             if (FD_ISSET(i, &read_fds)) { /* socket is read-ready */
-
                 if (i == listener_fd) {
                     /* new connection */
                     new_sock = accept(listener_fd,
@@ -677,8 +735,8 @@ listener_main_thread(void* args)
                                       &sin_size);
                     if (new_sock < 0) {
                         LCM_LOG(LCOMMU_LOG_ERROR,
-                            "accept() on listener socket[%d] failed with err(%d): %s\n",
-                               listener_fd, errno, strerror(errno));
+                                "accept() on listener socket[%d] failed with err(%d): %s\n",
+                                listener_fd, errno, strerror(errno));
                         lib_commu_bail_force(errno);
                     }
 
@@ -688,6 +746,9 @@ listener_main_thread(void* args)
 
                     /* set priority on socket */
                     err = set_sock_priority(new_sock);
+                    lib_commu_bail_error(err);
+
+                    err = set_sock_ka(new_sock);
                     lib_commu_bail_error(err);
 
                     /*start update DB*/
@@ -703,16 +764,16 @@ listener_main_thread(void* args)
                     is_db_locked = 1;
 
                     err = lib_commu_db_tcp_server_handle_info_set(
-                            thread_args->server_id, new_sock,
-                            thread_args->params.msg_type, local_addr_info,
-                            peer_addr_info, local_magic);
+                        thread_args->server_id, new_sock,
+                        thread_args->params.msg_type, local_addr_info,
+                        peer_addr_info, local_magic);
                     lib_commu_bail_error(err);
 
                     err = lib_cummo_db_server_status_client_set(
-                            new_sock, &client_addr,
-                            thread_args->params.s_ipv4_addr,
-                            thread_args->params.port,
-                            thread_args->server_id);
+                        new_sock, &client_addr,
+                        thread_args->params.s_ipv4_addr,
+                        thread_args->params.port,
+                        thread_args->server_id);
                     lib_commu_bail_error(err);
 
                     err = pthread_mutex_unlock(&lock_listener_db_access);
@@ -722,13 +783,12 @@ listener_main_thread(void* args)
 
                     /*send new socket to client*/
                     err = thread_args->clbk_st.clbk_notify_func(
-                            new_sock, peer_addr_info,
-                            thread_args->clbk_st.data, 0);
+                        new_sock, peer_addr_info,
+                        thread_args->clbk_st.data, 0);
                     lib_commu_bail_error(err);
 
                     is_sock_sent_client = 1;
                 }
-
                 /* Receiving  event */
                 else if (i == thread_args->event_fd) {
                     n_bytes = recvfrom(i, &server_id_buff,
@@ -747,7 +807,8 @@ listener_main_thread(void* args)
                         lib_commu_bail_error(err);
                         err = close_socket_wrapper(thread_args->event_fd);
                         lib_commu_bail_error(err);
-                        LCM_LOG(LCOMMU_LOG_NOTICE, "Received exit event on server id[%d]",
+                        LCM_LOG(LCOMMU_LOG_NOTICE,
+                                "Received exit event on server id[%d]",
                                 thread_args->server_id);
                         goto bail;
                     }
@@ -760,16 +821,17 @@ listener_main_thread(void* args)
                     }
                 } /*end receiving event*/
             }
-        }/*end for*/
-    }/*end while*/
+        } /*end for*/
+    } /*end while*/
 
 bail:
     if (is_db_locked) {
         pthread_mutex_unlock(&lock_listener_db_access);
     }
-    LCM_LOG(LCOMMU_LOG_NOTICE, "Exit from listener thread, server id[%u] with err(%d)\n",
-           thread_args->server_id, err);
-    if(err && !is_sock_sent_client && (new_sock != INVALID_HANDLE_ID)) {
+    LCM_LOG(LCOMMU_LOG_NOTICE,
+            "Exit from listener thread, server id[%u] with err(%d)\n",
+            thread_args->server_id, err);
+    if (err && !is_sock_sent_client && (new_sock != INVALID_HANDLE_ID)) {
         close_socket_wrapper(new_sock);
     }
     safe_free(args);
@@ -804,8 +866,9 @@ create_server_event_socket(int *fd, uint16_t idx)
 
     len = strlen(s_addr.sun_path) + sizeof(s_addr.sun_family);
     if (bind(*fd, (struct sockaddr *)&s_addr, len) < 0) {
-        LCM_LOG(LCOMMU_LOG_ERROR, "Failed to bind socket[%d] err(%d): %s\n", *fd, errno, strerror(
-                   errno));
+        LCM_LOG(LCOMMU_LOG_ERROR, "Failed to bind socket[%d] err(%d): %s\n",
+                *fd, errno, strerror(
+                    errno));
         lib_commu_bail_force(errno);
     }
 
@@ -929,8 +992,8 @@ client_connect_thread(void *args)
     }
 
     fd_max =
-            (client_fd > client_connect_exit_event_fd) ?
-                    client_fd : client_connect_exit_event_fd;
+        (client_fd > client_connect_exit_event_fd) ?
+        client_fd : client_connect_exit_event_fd;
 
     while (1) {
         /* set args for select */
@@ -963,8 +1026,8 @@ client_connect_thread(void *args)
                     }
                     if (so_err_val == 0) { /* connection established */
                         err = handle_new_non_blocking_client(
-                                client_fd, fd_flags, thread_args,
-                                &is_sock_sent_client);
+                            client_fd, fd_flags, thread_args,
+                            &is_sock_sent_client);
                         lib_commu_bail_error(err);
                         goto bail;
                     }
@@ -978,7 +1041,8 @@ client_connect_thread(void *args)
             }
             else if (FD_ISSET(i, &read_fds)) { /* socket is write-ready */
                 if (i == client_connect_exit_event_fd) {
-                    LCM_LOG(LCOMMU_LOG_NOTICE, "Exiting from client connect thread");
+                    LCM_LOG(LCOMMU_LOG_NOTICE,
+                            "Exiting from client connect thread");
                     goto bail;
                 }
             }
@@ -988,7 +1052,7 @@ client_connect_thread(void *args)
 bail:
     if (err && (client_fd != INVALID_HANDLE_ID)) {
         /* handle failure */
-        if(!is_sock_sent_client) {
+        if (!is_sock_sent_client) {
             close_socket_wrapper(client_fd);
         }
         peer_info.ipv4_addr = thread_args->conn_info.d_ipv4_addr;
@@ -1006,14 +1070,14 @@ bail:
     }
     client_connect_thread_cnt--;
     safe_free(args);
-    pthread_exit(&err);
+    pthread_exit(NULL);
 }
 
 
 static int
 handle_new_non_blocking_client(
-        int client_fd, int def_flags, struct connect_thread_args *thread_args,
-        int *is_sock_sent_client)
+    int client_fd, int def_flags, struct connect_thread_args *thread_args,
+    int *is_sock_sent_client)
 {
     int err = 0;
     uint32_t local_magic = 0;
@@ -1033,7 +1097,7 @@ handle_new_non_blocking_client(
     /* restore file status flags - set as blocking */
     if (fcntl(client_fd, F_SETFL, def_flags) < 0) {
         LCM_LOG(LCOMMU_LOG_ERROR, "fcntl failed: on socket[%d] err(%u): %s",
-          client_fd, errno, strerror(errno));
+                client_fd, errno, strerror(errno));
         lib_commu_bail_force(errno);
     }
 
@@ -1058,7 +1122,8 @@ handle_new_non_blocking_client(
 
     *is_sock_sent_client = 1;
 
-    LCM_LOG(LCOMMU_LOG_INFO, "Establish connection on socket[%d]\n", client_fd);
+    LCM_LOG(LCOMMU_LOG_INFO, "Establish connection on socket[%d]\n",
+            client_fd);
 
 bail:
     return err;
@@ -1199,7 +1264,8 @@ comm_lib_init(lib_commu_log_cb_t logging_cb)
     lib_commu_bail_error(err);
 
     g_lib_commu_init_done = 1;
-    LCM_LOG(LCOMMU_LOG_NOTICE, "Communication library finish initialization\n");
+    LCM_LOG(LCOMMU_LOG_NOTICE,
+            "Communication library finish initialization\n");
 
 bail:
     return -err;
@@ -1249,12 +1315,14 @@ comm_lib_deinit()
         tmp_err = exit_client_connect_threads();
         if (tmp_err != 0) {
             err = tmp_err;
-            LCM_LOG(LCOMMU_LOG_ERROR, "Failed on to send exit event to client connect thread err(%u)\n", err);
+            LCM_LOG(LCOMMU_LOG_ERROR,
+                    "Failed on to send exit event to client connect thread err(%u)\n",
+                    err);
             /*update error and continue, best effort deinit*/
         }
     }
 
-    while(1) {
+    while (1) {
         if (client_connect_thread_cnt == 0) {
             break;
         }
@@ -1276,7 +1344,8 @@ comm_lib_deinit()
     lib_commu_bail_error(tmp_err);
 
 bail:
-    LCM_LOG(LCOMMU_LOG_NOTICE, "Communication library finish deinit with err(%d)\n", err);
+    LCM_LOG(LCOMMU_LOG_NOTICE,
+            "Communication library finish deinit with err(%d)\n", err);
     return -err;
 }
 
@@ -1403,8 +1472,9 @@ comm_lib_udp_session_start(handle_t *handle,
      */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
-        LCM_LOG(LCOMMU_LOG_ERROR, "Socket creation failed failed err(%u): %s", errno,
-               strerror(errno));
+        LCM_LOG(LCOMMU_LOG_ERROR, "Socket creation failed failed err(%u): %s",
+                errno,
+                strerror(errno));
         lib_commu_bail_force(errno);
     }
 
@@ -1429,8 +1499,9 @@ comm_lib_udp_session_start(handle_t *handle,
     if (params->fields.ip_udp_params.connection_role == CONN_SERVER) {
         sock_addr_len = sizeof(sock_addr);
         if (bind(sockfd, (struct sockaddr *) &sock_addr, sock_addr_len) < 0) {
-            LCM_LOG(LCOMMU_LOG_ERROR, "bind() socket[%d] failed with err(%u): %s\n",
-                   sockfd, errno, strerror(errno));
+            LCM_LOG(LCOMMU_LOG_ERROR,
+                    "bind() socket[%d] failed with err(%u): %s\n",
+                    sockfd, errno, strerror(errno));
             lib_commu_bail_force(errno);
         }
     }
@@ -1443,7 +1514,7 @@ comm_lib_udp_session_start(handle_t *handle,
     err =
         lib_commu_db_udp_handle_info_set(sockfd,
                                          &(params->fields.ip_udp_params),
-                                       local_magic);
+                                         local_magic);
     lib_commu_bail_error(err);
 
     /* update socket fd */
@@ -1649,7 +1720,8 @@ comm_lib_udp_recv(handle_t handle, struct addr_info *addresser_st,
 
 
 bail:
-    LCM_LOG(LCOMMU_LOG_DEBUG, "finish: %s, with error code[%d]\n", __func__, err);
+    LCM_LOG(LCOMMU_LOG_DEBUG, "finish: %s, with error code[%d]\n", __func__,
+            err);
     if (err) {
         *payload_len = 0;
     }
@@ -1719,7 +1791,8 @@ comm_lib_tcp_server_session_start(struct session_params params,
     if (-1 == setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &optval,
                          sizeof(optval))) {
         LCM_LOG(LCOMMU_LOG_ERROR,
-                "Fail setting sock options [SO_REUSEADDR], err[%d]: %s\n", errno,
+                "Fail setting sock options [SO_REUSEADDR], err[%d]: %s\n",
+                errno,
                 strerror(errno));
         close_socket_wrapper(listener);
         lib_commu_bail_force(errno);
@@ -1727,8 +1800,9 @@ comm_lib_tcp_server_session_start(struct session_params params,
 
     sockaddr_len = sizeof(serveraddr);
     if (bind(listener, (struct sockaddr *) &serveraddr, sockaddr_len) < 0) {
-        LCM_LOG(LCOMMU_LOG_ERROR, "Bind listener socket[%d] failed err(%u): %s\n",
-               listener, errno, strerror(errno));
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Bind listener socket[%d] failed err(%u): %s\n",
+                listener, errno, strerror(errno));
         close_socket_wrapper(listener);
         lib_commu_bail_force(errno);
     }
@@ -1747,13 +1821,13 @@ comm_lib_tcp_server_session_start(struct session_params params,
     *server_id = idx;
 
     err = create_server_event_socket(&event_fd, idx);
-    if(err) {
+    if (err) {
         close_socket_wrapper(listener);
         lib_commu_bail_error(err);
     }
 
     args = (struct listener_thread_args *) malloc(
-            sizeof(struct listener_thread_args));
+        sizeof(struct listener_thread_args));
     lib_commu_bail_null(args);
 
     args->event_fd = event_fd;
@@ -1771,7 +1845,8 @@ comm_lib_tcp_server_session_start(struct session_params params,
     if (err != 0) {
         close_socket_wrapper(listener);
         safe_free(args);
-        LCM_LOG(LCOMMU_LOG_ERROR,"Failed to create listener thread err(%u):\n", err);
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Failed to create listener thread err(%u):\n", err);
         lib_commu_bail_force(err);
     }
 
@@ -1841,7 +1916,8 @@ comm_lib_tcp_server_session_stop(uint16_t server_id, handle_t *handle_array,
     lib_commu_bail_error(err);
 
     if (server_status->listener_status == HANDLE_STATUS_DOWN) {
-        LCM_LOG(LCOMMU_LOG_NOTICE, "Server[%u] already not active\n", server_id);
+        LCM_LOG(LCOMMU_LOG_NOTICE, "Server[%u] already not active\n",
+                server_id);
         goto bail;
     }
 
@@ -1863,8 +1939,8 @@ comm_lib_tcp_server_session_stop(uint16_t server_id, handle_t *handle_array,
     LCM_LOG(LCOMMU_LOG_INFO, "listener thread exited\n");
 
     /* close all clients sockets */
-    for(i = 0; i < MAX_CONNECTION_NUM; i++) {
-        if(server_status->client_status[i].handle != INVALID_HANDLE_ID) {
+    for (i = 0; i < MAX_CONNECTION_NUM; i++) {
+        if (server_status->client_status[i].handle != INVALID_HANDLE_ID) {
             err = close_socket_wrapper(server_status->client_status[i].handle);
             lib_commu_bail_error(err);
 
@@ -1944,7 +2020,7 @@ comm_lib_tcp_client_blocking_start(
     sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (sock_fd < 0) {
         LCM_LOG(LCOMMU_LOG_ERROR, "Socket creation failed err(%u): %s", errno,
-               strerror(errno));
+                strerror(errno));
         lib_commu_bail_force(errno);
     }
 
@@ -1956,6 +2032,10 @@ comm_lib_tcp_client_blocking_start(
     err = set_sock_priority(sock_fd);
     lib_commu_bail_error(err);
 
+    /* set keepalive on socket */
+    err = set_sock_ka(sock_fd);
+    lib_commu_bail_error(err);
+
     server_sock_addr.sin_family = AF_INET;
     server_sock_addr.sin_port = conn_info->d_port;
     server_sock_addr.sin_addr.s_addr = conn_info->d_ipv4_addr;
@@ -1963,7 +2043,8 @@ comm_lib_tcp_client_blocking_start(
 
     if (connect(sock_fd, (struct sockaddr*) &server_sock_addr,
                 sock_addr_len) < 0) {
-        LCM_LOG(LCOMMU_LOG_ERROR, "Connect() failed: on socket[%d] err(%u): %s",
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Connect() failed: on socket[%d] err(%u): %s",
                 sock_fd, errno, strerror(errno));
         lib_commu_bail_force(errno);
     }
@@ -2000,7 +2081,7 @@ bail:
  *
  * @param[in] conn_info - server address, port, etc...
  * @param[in] clbk_st - function callback
-  * @param[in] tval - Client can set timeout for the connection.
+ * @param[in] tval - Client can set timeout for the connection.
  *                   if tval == NULL, connection will wait till connection is established or error
  *                   else connection will wait till time stated will pass.
  * @param[out] None
@@ -2013,12 +2094,14 @@ bail:
  */
 int
 comm_lib_tcp_client_non_blocking_start(
-        const struct connection_info const *conn_info,
-        struct register_to_new_handle *clbk_st, struct timeval *tval)
+    const struct connection_info const *conn_info,
+    struct register_to_new_handle *clbk_st, struct timeval *tval)
 {
-    int err = 0;
+    int err = 0, err2 = 0;
     int sock_fd = INVALID_HANDLE_ID;
     pthread_t connect_thread = 0;
+    pthread_attr_t attr;
+    int is_attr_init = 0;
     struct connect_thread_args *args = NULL;
 
     if (!g_lib_commu_init_done) {
@@ -2037,7 +2120,7 @@ comm_lib_tcp_client_non_blocking_start(
     sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (sock_fd < 0) {
         LCM_LOG(LCOMMU_LOG_ERROR, "Socket creation failed err(%u): %s", errno,
-               strerror(errno));
+                strerror(errno));
         lib_commu_bail_force(errno);
     }
 
@@ -2050,7 +2133,7 @@ comm_lib_tcp_client_non_blocking_start(
     lib_commu_bail_error(err);
 
     args = (struct connect_thread_args *) malloc(
-            sizeof(struct connect_thread_args));
+        sizeof(struct connect_thread_args));
     lib_commu_bail_null(args);
 
     args->client_fd = sock_fd;
@@ -2058,12 +2141,31 @@ comm_lib_tcp_client_non_blocking_start(
     args->clbk_st.clbk_notify_func = clbk_st->clbk_notify_func;
     args->clbk_st.data = clbk_st->data;
     args->use_tval = 0;
-    if(tval != NULL) {
+    if (tval != NULL) {
         memcpy(&(args->tval), tval, sizeof(*tval));
         args->use_tval = 1;
     }
 
-    err = pthread_create(&connect_thread, NULL, client_connect_thread, args);
+    /* set thread attributs */
+    err = pthread_attr_init(&attr);
+    if (err != 0) {
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Failed to init ptheard attribute(%u):\n", err);
+        safe_free(args);
+        lib_commu_bail_force(err);
+    }
+    is_attr_init = 1;
+
+    err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    if (err != 0) {
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Failed to set detach state on attribute attribute(%u):\n",
+                err);
+        safe_free(args);
+        lib_commu_bail_force(err);
+    }
+
+    err = pthread_create(&connect_thread, &attr, client_connect_thread, args);
     if (err != 0) {
         LCM_LOG(LCOMMU_LOG_ERROR,
                 "Failed to create client connect thread err(%u):\n", err);
@@ -2074,6 +2176,13 @@ comm_lib_tcp_client_non_blocking_start(
 bail:
     if (err && (sock_fd != INVALID_HANDLE_ID)) {
         close_socket_wrapper(sock_fd);
+    }
+    if (is_attr_init) {
+        err2 = pthread_attr_destroy(&attr);
+        if (err2) {
+            LCM_LOG(LCOMMU_LOG_ERROR,
+                    "Failed to destroy ptheard attribute(%u):\n", err2);
+        }
     }
     return -err;
 }
@@ -2245,7 +2354,7 @@ comm_lib_tcp_recv_blocking(handle_t handle, struct addr_info *addresser_st,
     lib_commu_bail_error(err);
 
     if ((handle_db_type != TCP_CLIENT_HANDLE_DB)
-            && (handle_db_type != TCP_SERVER_HANDLE_DB)) {
+        && (handle_db_type != TCP_SERVER_HANDLE_DB)) {
         LCM_LOG(LCOMMU_LOG_ERROR,
                 "Invalid handle type[%d]\n", handle_db_type);
         lib_commu_bail_force(EINVAL);
@@ -2273,7 +2382,7 @@ comm_lib_tcp_recv_blocking(handle_t handle, struct addr_info *addresser_st,
 
     /* 3. get the message */
     payload_len = metadata_st.payload_size;
-    if(metadata_st.payload_size <= MAX_TCP_PAYLOAD) {
+    if (metadata_st.payload_size <= MAX_TCP_PAYLOAD) {
         err = comm_lib_tcp_ll_recv_blocking(handle, payload_data->payload[0],
                                             &payload_len);
         lib_commu_bail_error(err);
@@ -2399,7 +2508,8 @@ comm_lib_tcp_handle_status_get(struct connection_status *connection_status)
 
     if (getsockname(connection_status->handle, (struct sockaddr*) &local_addr,
                     &local_addr_len) < 0) {
-        LCM_LOG(LCOMMU_LOG_ERROR, "getsockname() failed with err(%d): %s", errno, strerror(errno));
+        LCM_LOG(LCOMMU_LOG_ERROR, "getsockname() failed with err(%d): %s",
+                errno, strerror(errno));
         lib_commu_bail_force(errno);
     }
 

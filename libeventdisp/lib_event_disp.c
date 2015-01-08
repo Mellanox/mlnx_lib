@@ -94,9 +94,12 @@ static int event_disp_fds[EVENT_DISP_MAX_SOCK];
 static unsigned int event_disp_con = 0;
 
 /*
- * Events generation counter
+ * Events generation counters
  */
 static unsigned long int event_disp_gen_counter[EVENT_DISP_MAX_EVENTS];
+static unsigned long int event_disp_rcv_counter[EVENT_DISP_MAX_EVENTS];
+static unsigned long int event_disp_total_gen_counter = 0;
+static unsigned long int event_disp_total_rcv_counter = 0;
 
 /*
  * Event dispatcher MUTEX
@@ -260,6 +263,9 @@ event_disp_api_init(void)
     /* Reset DB */
     memset(event_disp_db, -1, sizeof(event_disp_db));
     memset(event_disp_gen_counter, 0, sizeof(event_disp_gen_counter));
+    memset(event_disp_rcv_counter, 0, sizeof(event_disp_rcv_counter));
+    event_disp_total_gen_counter = 0;
+    event_disp_total_rcv_counter = 0;
     memset(event_disp_fds, -1, sizeof(event_disp_fds));
     event_disp_con = 0;
 
@@ -317,6 +323,9 @@ event_disp_api_deinit(void)
     /* Reset DB */
     memset(event_disp_db, -1, sizeof(event_disp_db));
     memset(event_disp_gen_counter, 0, sizeof(event_disp_gen_counter));
+    memset(event_disp_rcv_counter, 0, sizeof(event_disp_rcv_counter));
+    event_disp_total_gen_counter = 0;
+    event_disp_total_rcv_counter = 0;
     memset(event_disp_fds, -1, sizeof(event_disp_fds));
     event_disp_con = 0;
 
@@ -900,6 +909,7 @@ event_disp_api_generate_event_mode(int event,
     }
     /* Increase generation counter */
     event_disp_gen_counter[event]++;
+    event_disp_total_gen_counter++;
 
 bail:
     /* If no error, set return send status */
@@ -928,6 +938,7 @@ bail:
  * @return EVENT_DISP_STATUS_PARAM_NULL if parameter is NULL.
  * @return EVENT_DISP_STATUS_PARAM_INVALID if file descriptor is invalid.
  * @return EVENT_DISP_STATUS_SOCKET_ERROR if socket operation fails.
+ * @return EVENT_DISP_STATUS_PARAM_RANGE if received event outside valid range.
  */
 event_disp_status_t
 event_disp_api_get_event(int fd,
@@ -951,6 +962,16 @@ event_disp_api_get_event(int fd,
         goto bail;
     }
 
+    /* Verify received event within range */
+    if ((rcv_msg->event >= EVENT_DISP_MAX_EVENTS) || (rcv_msg->event < 0)) {
+        err = EVENT_DISP_STATUS_PARAM_RANGE;
+        goto bail;
+    }
+
+    /* Increase receive counter */
+    event_disp_rcv_counter[rcv_msg->event]++;
+    event_disp_total_rcv_counter++;
+
 bail:
     return err;
 }
@@ -968,6 +989,7 @@ bail:
  * @return EVENT_DISP_STATUS_PARAM_NULL if parameter is NULL.
  * @return EVENT_DISP_STATUS_PARAM_INVALID if file descriptor is invalid.
  * @return EVENT_DISP_STATUS_SOCKET_ERROR if socket operation fails.
+ * @return EVENT_DISP_STATUS_PARAM_RANGE if received event outside valid range.
  */
 event_disp_status_t
 event_disp_api_get_event_to_user_buf(int fd,
@@ -975,6 +997,7 @@ event_disp_api_get_event_to_user_buf(int fd,
 		                 int rcv_size)
 {
     event_disp_status_t err = EVENT_DISP_STATUS_SUCCESS;
+    event_disp_msg_t    *ed_msg = (event_disp_msg_t *) rcv_msg;
 
     /* Validate input */
     if (NULL == rcv_msg) {
@@ -991,6 +1014,14 @@ event_disp_api_get_event_to_user_buf(int fd,
         err = EVENT_DISP_STATUS_SOCKET_ERROR;
         goto bail;
     }
+
+    /* Increase event receive counter for a message with a valid event */
+    if ((ed_msg->event >= 0) && (ed_msg->event < EVENT_DISP_MAX_EVENTS)) {
+        event_disp_rcv_counter[ed_msg->event]++;
+    }
+
+    /* Increase receive counter */
+    event_disp_total_rcv_counter++;
 
 bail:
     return err;
@@ -1039,8 +1070,9 @@ event_disp_api_dump_data(FILE *dump_file)
         for (event_id = 0; event_id < EVENT_DISP_MAX_EVENTS; event_id++) {
             is_reg = false;
             fprintf(dump_file, "\nEvent %d:\n", event_id);
-            fprintf(dump_file, "Generated %lu times\n",
-                    event_disp_gen_counter[event_id]);
+            fprintf(dump_file, "Generated %lu times, received %lu times\n",
+                    event_disp_gen_counter[event_id],
+                    event_disp_rcv_counter[event_id]);
             fprintf(dump_file, "Registered clients -\n");
             for (con_id = 0; con_id < EVENT_DISP_MAX_CON; con_id++) {
                 if (-1 != event_disp_db[event_id][con_id]) {
@@ -1053,6 +1085,10 @@ event_disp_api_dump_data(FILE *dump_file)
                 fprintf(dump_file, "No FDs\n");
             }
         }
+        fprintf(dump_file,
+                "\nTotal %lu generated, %lu received\n",
+                event_disp_total_gen_counter,
+                event_disp_total_rcv_counter);
         /* Unlock MUTEX */
         if (0 != pthread_mutex_unlock(&event_disp_mutex)) {
             err = EVENT_DISP_STATUS_MUTEX_ERROR;

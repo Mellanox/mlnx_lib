@@ -135,6 +135,11 @@ static int ctrl_learn_handle_flush_all(void);
 int ctrl_learn_handle_oes_event( struct oes_event_info* event_info,
                                  int event_num);
 
+/* lib ctrl learn verifies whether possible to add notified entries to fdb */
+static int
+update_approved_list(struct ctrl_learn_fdb_notify_data* notif_records);
+
+
 static int is_ctrl_learn_start = 0;
 
 static int ctrl_learn_stop_signal = 0;
@@ -423,8 +428,8 @@ ctrl_learn_thread_routine(void *data)
 
             err = ctrl_learn_handle_oes_event(event_info, event_num);
             if (err != 0) {
-                if (err == -EXFULL) {
-                    LOG(CL_LOG_WARN,
+                if ( (err == -EXFULL) || (err == -ENOENT) ) {
+                    LOG(CL_LOG_NOTICE,
                         "ctrl_learn_handle_oes_event err [%d]-[%s]\n", err, strerror(
                             -err));
                 }
@@ -440,7 +445,7 @@ ctrl_learn_thread_routine(void *data)
 
             err = ctrl_learn_handle_oes_event(event_info_sim, event_num_sim);
             if (err == -EXFULL) {
-                LOG(CL_LOG_WARN,
+                LOG(CL_LOG_DEBUG,
                     "ctrl_learn_handle_oes_event err [%d]-[%s]\n", err, strerror(
                         -err));
             }
@@ -637,6 +642,18 @@ ctrl_learn_handle_oes_event( struct oes_event_info* event_info, int event_num)
     memset(approved_mac_entry_list, 0x0, sizeof(approved_mac_entry_list));
 
     notif_records.records_num = lst_idx;
+    for (i = 0; i < (int)notif_records.records_num; i++) {
+        notif_records.records_arr[i].decision =
+                   CTRL_LEARN_NOTIFY_DECISION_APPROVE;
+    }
+
+    err = update_approved_list(&notif_records);
+	if(err) {
+		 LOG(CL_LOG_ERR,
+			  "Failed at ctrl_learn build aproved list [%d]\n", err);
+		 err = -EPERM;
+	}
+
     /* is notification callback registered ? */
     if (ctrl_learn_notification_cb != NULL) {
         notif_records.records_num = lst_idx;
@@ -648,81 +665,44 @@ ctrl_learn_handle_oes_event( struct oes_event_info* event_info, int event_num)
                 "Failed at ctrl_learn_notification_cb err [%d]\n",
                 err);
         }
-
-        /* Iterate decision */
-        approved_cnt = 0;
-        for (i = 0; i < (int)notif_records.records_num; i++) {
-            if (notif_records.records_arr[i].decision ==
-                CTRL_LEARN_NOTIFY_DECISION_APPROVE) {
-                approved_mac_entry_list[approved_cnt].mac_addr_params.vid =
-                    notif_records.records_arr[i].oes_event_fdb.fdb_event_data.
-                    fdb_entry.fdb_entry.vid;
-                approved_mac_entry_list[approved_cnt].mac_addr_params.mac_addr
-                    =
-                        notif_records.records_arr[i].oes_event_fdb.
-                        fdb_event_data.
-                        fdb_entry.fdb_entry.mac_addr;
-                approved_mac_entry_list[approved_cnt].mac_addr_params.log_port
-                    =
-                        notif_records.records_arr[i].oes_event_fdb.
-                        fdb_event_data.
-                        fdb_entry.fdb_entry.log_port;
-                approved_mac_entry_list[approved_cnt].mac_addr_params.
-                entry_type =
-                    notif_records.records_arr[i].oes_event_fdb.fdb_event_data.
-                    fdb_entry.fdb_entry.entry_type;
-                /* convert from OES Type to FDB Type */
-
-                switch (approved_mac_entry_list[approved_cnt].mac_addr_params.
-                        entry_type) {
-                case OES_FDB_STATIC:
-                    approved_mac_entry_list[approved_cnt].entry_type =
-                        FDB_UC_STATIC;
-                    break;
-                case OES_FDB_DYNAMIC:
-                    approved_mac_entry_list[approved_cnt].entry_type =
-                        FDB_UC_AGEABLE;
-                    break;
-                }
-                approved_cnt++;
-            }
-        }
     }
-    else {
-        approved_cnt = 0;
-        for (i = 0; i < (int)notif_records.records_num; i++) {
-            approved_mac_entry_list[approved_cnt].mac_addr_params.vid =
-                notif_records.records_arr[i].oes_event_fdb.fdb_event_data.
-                fdb_entry
-                .fdb_entry.vid;
-            approved_mac_entry_list[approved_cnt].mac_addr_params.mac_addr =
-                notif_records.records_arr[i].oes_event_fdb.fdb_event_data.
-                fdb_entry
-                .fdb_entry.mac_addr;
-            approved_mac_entry_list[approved_cnt].mac_addr_params.log_port =
-                notif_records.records_arr[i].oes_event_fdb.fdb_event_data.
-                fdb_entry
-                .fdb_entry.log_port;
-            approved_mac_entry_list[approved_cnt].mac_addr_params.entry_type =
-                notif_records.records_arr[i].oes_event_fdb.fdb_event_data.
-                fdb_entry
-                .fdb_entry.entry_type;
+    /* Iterate decision */
+    approved_cnt = 0;
+    for (i = 0; i < (int)notif_records.records_num; i++) {
+    	if (notif_records.records_arr[i].decision ==
+    			CTRL_LEARN_NOTIFY_DECISION_APPROVE) {
+    		approved_mac_entry_list[approved_cnt].mac_addr_params.vid =
+    				notif_records.records_arr[i].oes_event_fdb.fdb_event_data.
+    				fdb_entry.fdb_entry.vid;
+    		approved_mac_entry_list[approved_cnt].mac_addr_params.mac_addr
+    		=
+    				notif_records.records_arr[i].oes_event_fdb.
+    				fdb_event_data.
+    				fdb_entry.fdb_entry.mac_addr;
+    		approved_mac_entry_list[approved_cnt].mac_addr_params.log_port
+    		=
+    				notif_records.records_arr[i].oes_event_fdb.
+    				fdb_event_data.
+    				fdb_entry.fdb_entry.log_port;
+    		approved_mac_entry_list[approved_cnt].mac_addr_params.
+    		entry_type =
+    				notif_records.records_arr[i].oes_event_fdb.fdb_event_data.
+    				fdb_entry.fdb_entry.entry_type;
+    		/* convert from OES Type to FDB Type */
 
-            /* convert from OES Type to FDB Type */
-            switch (approved_mac_entry_list[approved_cnt].mac_addr_params.
-                    entry_type) {
-            case OES_FDB_STATIC:
-                approved_mac_entry_list[approved_cnt].entry_type =
-                    FDB_UC_STATIC;
-                break;
-
-            case OES_FDB_DYNAMIC:
-                approved_mac_entry_list[approved_cnt].entry_type =
-                    FDB_UC_AGEABLE;
-                break;
-            }
-            approved_cnt++;
-        }
+    		switch (approved_mac_entry_list[approved_cnt].mac_addr_params.
+    				entry_type) {
+    		case OES_FDB_STATIC:
+    			approved_mac_entry_list[approved_cnt].entry_type =
+    					FDB_UC_STATIC;
+    			break;
+    		case OES_FDB_DYNAMIC:
+    			approved_mac_entry_list[approved_cnt].entry_type =
+    					FDB_UC_AGEABLE;
+    			break;
+    		}
+    		approved_cnt++;
+    	}
     }
 
     if (is_learned_or_aged_event) {
@@ -735,7 +715,7 @@ ctrl_learn_handle_oes_event( struct oes_event_info* event_info, int event_num)
             if (err != 0) {
                 /* ERROR */
                 if (err == -EXFULL) {
-                    LOG(CL_LOG_WARN,
+                    LOG(CL_LOG_DEBUG,
                         "ctrl_learn_hal_fdb_uc_mac_addr_set err [%d]-[%s] cnt [%d]\n",
                         oes_status, strerror(-err), approved_cnt);
                 }
@@ -1386,7 +1366,18 @@ ctrl_learn_api_fdb_uc_mac_addr_set(
     }
 
     notify_records.records_num = lst_idx;
+    for (i = 0; i < (int)notify_records.records_num; i++) {
+            notify_records.records_arr[i].decision =
+                       CTRL_LEARN_NOTIFY_DECISION_APPROVE;
+    }
 
+    err = update_approved_list(&notify_records);
+	if(err) {
+         LOG(CL_LOG_ERR,
+           "Failed at ctrl_learn build aproved list [%d]\n", err);
+         err = -EPERM;
+         goto out;
+    }
     /* is notification callback registered ? */
     if (ctrl_learn_notification_cb != NULL) {
         err = ctrl_learn_notification_cb(&notify_records, originator_cookie);
@@ -1397,47 +1388,42 @@ ctrl_learn_api_fdb_uc_mac_addr_set(
             err = -ENOMEM;
             goto out;
         }
-
-        approved_mac_entry_list = (struct fdb_uc_mac_addr_params*)malloc(
-            sizeof(struct fdb_uc_mac_addr_params) * num_macs);
-
-        if (approved_mac_entry_list == NULL) {
-            LOG(CL_LOG_ERR,
-                "Failed to allocate memory for approved_mac_entry_list\n");
-            err = -ENOMEM;
-            goto out;
-        }
-
-        /* Iterate decision */
-        approved_cnt = 0;
-        for (i = 0; i < (int)notify_records.records_num; i++) {
-            if (notify_records.records_arr[i].decision ==
-                CTRL_LEARN_NOTIFY_DECISION_APPROVE) {
-                approved_mac_entry_list[approved_cnt].mac_addr_params.vid =
-                    notify_records.records_arr[i].oes_event_fdb.fdb_event_data.
-                    fdb_entry.fdb_entry.vid;
-                approved_mac_entry_list[approved_cnt].mac_addr_params.mac_addr
-                    =
-                        notify_records.records_arr[i].oes_event_fdb.
-                        fdb_event_data.
-                        fdb_entry.fdb_entry.mac_addr;
-                approved_mac_entry_list[approved_cnt].mac_addr_params.log_port
-                    =
-                        notify_records.records_arr[i].oes_event_fdb.
-                        fdb_event_data.
-                        fdb_entry.fdb_entry.log_port;
-
-                approved_mac_entry_list[approved_cnt].entry_type =
-                    notify_records.records_arr[i].entry_type;
-
-                approved_cnt++;
-            }
-        }
     }
-    else {
-        approved_mac_entry_list = mac_entry_list;
-        mac_entry_list = NULL;
-        approved_cnt = notify_records.records_num;
+
+    approved_mac_entry_list = (struct fdb_uc_mac_addr_params*)malloc(
+    		sizeof(struct fdb_uc_mac_addr_params) * num_macs);
+
+    if (approved_mac_entry_list == NULL) {
+    	LOG(CL_LOG_ERR,
+    			"Failed to allocate memory for approved_mac_entry_list\n");
+    	err = -ENOMEM;
+    	goto out;
+    }
+
+    /* Iterate decision */
+    approved_cnt = 0;
+    for (i = 0; i < (int)notify_records.records_num; i++) {
+    	if (notify_records.records_arr[i].decision ==
+    			CTRL_LEARN_NOTIFY_DECISION_APPROVE) {
+    		approved_mac_entry_list[approved_cnt].mac_addr_params.vid =
+    				notify_records.records_arr[i].oes_event_fdb.fdb_event_data.
+    				fdb_entry.fdb_entry.vid;
+    		approved_mac_entry_list[approved_cnt].mac_addr_params.mac_addr
+    		=
+    				notify_records.records_arr[i].oes_event_fdb.
+    				fdb_event_data.
+    				fdb_entry.fdb_entry.mac_addr;
+    		approved_mac_entry_list[approved_cnt].mac_addr_params.log_port
+    		=
+    				notify_records.records_arr[i].oes_event_fdb.
+    				fdb_event_data.
+    				fdb_entry.fdb_entry.log_port;
+
+    		approved_mac_entry_list[approved_cnt].entry_type =
+    				notify_records.records_arr[i].entry_type;
+
+    		approved_cnt++;
+    	}
     }
 
     /* check if approved mac list is not empty */
@@ -1447,7 +1433,7 @@ ctrl_learn_api_fdb_uc_mac_addr_set(
                                                  &approved_cnt);
         if (err != 0) {
             if (err == -EXFULL) {
-                LOG(CL_LOG_WARN,
+                LOG(CL_LOG_DEBUG,
                     "ctrl_learn_hal_fdb_uc_mac_addr_set failed err [%d]-[%s] cnt [%d]\n",
                     err, strerror(-err), approved_cnt);
             }
@@ -1512,12 +1498,14 @@ ctrl_learn_api_fdb_uc_mac_addr_set(
                     if ((notify_records.records_arr[i].oes_event_fdb.
                          fdb_event_data.fdb_entry.fdb_entry.vid ==
                          macs_failed_list[j].mac_addr_params.vid)
+
                         && (notify_records.records_arr[i].oes_event_fdb.
                             fdb_event_data.fdb_entry.fdb_entry.log_port ==
                             macs_failed_list[j].mac_addr_params.log_port)
-                        && (notify_records.records_arr[i].oes_event_fdb.
-                            fdb_event_data.fdb_entry.fdb_entry.entry_type ==
-                            macs_failed_list[j].mac_addr_params.entry_type)
+
+                        && (notify_records.records_arr[i].entry_type ==
+                            macs_failed_list[j].entry_type)
+
                         && (0 ==
                             memcmp(&notify_records.records_arr[i].oes_event_fdb
                                    .
@@ -1680,6 +1668,48 @@ out:
 
     return err;
 }
+
+/**
+ *  This function updates list of approved for configure MAC entries.
+ *  Verified data base limitations
+ *  @param[in,out] motif_records - notification records
+ */
+int
+update_approved_list(struct ctrl_learn_fdb_notify_data* notif_records)
+{
+    int err = 0;
+    uint32_t i,  cnt;
+    uint32_t num_approved = notif_records->records_num;
+    uint32_t processed_approved =0;
+
+	err = fdb_uc_db_get_free_pool_count(&cnt);
+	if(err){
+        LOG(CL_LOG_ERR,
+        "Failed getting counter of free blocks ,err %d\n", err);
+        goto bail;
+    }
+    if(cnt < notif_records->records_num){
+        num_approved = cnt;
+
+       /* after passing "num_approved" elements mark as "denied"
+         * all entries with LEARN TYPE  */
+       for (i = 0; i < notif_records->records_num; i++) {
+           if(notif_records->records_arr[i].event_type == OES_FDB_EVENT_LEARN){
+
+               if(processed_approved >= num_approved){
+                    notif_records->records_arr[i].decision =
+                    CTRL_LEARN_NOTIFY_DECISION_DENY;
+               }
+               processed_approved ++;
+          }
+       }
+    }
+ bail:
+    return err;
+}
+
+
+
 
 /**
  *  This function flush the fdb
