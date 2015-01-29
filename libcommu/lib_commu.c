@@ -578,20 +578,20 @@ set_sock_priority(int sock_fd)
     int priority = 6;
     int iptos_precedence = 0xc0 /*IPTOS_CLASS_CS6*/;
 
+    if (setsockopt(sock_fd, IPPROTO_IP, IP_TOS, &iptos_precedence,
+                   sizeof(iptos_precedence)) < 0) {
+        LCM_LOG(LCOMMU_LOG_ERROR,
+                "Fail setting sock options [IP_TOS], err[%d]: %s\n", errno,
+                strerror(errno));
+        lib_commu_bail_force(errno);
+    }
+
     /* Set SO_PRIORITY for VRRP traffic */
     if (setsockopt(sock_fd, SOL_SOCKET, SO_PRIORITY, &priority,
                    sizeof(priority)) < 0) {
         LCM_LOG(LCOMMU_LOG_ERROR,
                 "Fail setting sock options [SO_PRIORITY], err[%d]: %s\n",
                 errno,
-                strerror(errno));
-        lib_commu_bail_force(errno);
-    }
-
-    if (setsockopt(sock_fd, IPPROTO_IP, IP_TOS, &iptos_precedence,
-                   sizeof(iptos_precedence)) < 0) {
-        LCM_LOG(LCOMMU_LOG_ERROR,
-                "Fail setting sock options [IP_TOS], err[%d]: %s\n", errno,
                 strerror(errno));
         lib_commu_bail_force(errno);
     }
